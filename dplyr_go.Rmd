@@ -1,0 +1,216 @@
+---
+title: "UFO sightings"
+author: "collnell"
+date: "November 30, 2016"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+setwd("/Users/colleennell/Dropbox/Projects/R_ed/")
+se <- function(x) sd(x)/sqrt(length(x))
+```
+
+##dplyr: grammar of data manipulation    
+
+```{r,eval=F}
+install.packages("dplyr")
+library(dplyr)
+```  
+###Main verbs  
+- select() & filter()  
+- group_by()  
+- summarize() & mutate() 
+- join()  
+
+https://cran.r-project.org/web/packages/dplyr/dplyr.pdf
+
+
+##UFO Reporting Center data  {.smaller}  
+    
+```{r}
+nuforc<-read.csv("ufos_2014_2016.csv")
+str(nuforc)
+```  
+###Which states have had the highest monthly UFO sightings in 2015 & 2016?  
+
+http://www.nuforc.org/
+
+## select: subset columns  {.smaller .build}  
+
+```{r}
+ufos <- select(nuforc, Year, Month, Day, Country, State, City, Shape)
+head(ufos)
+```  
+```{r, echo=F}
+nuforc<-read.csv("ufos_2014_2016.csv")
+```
+or drop unwanted variables:  
+```{r, eval=F}
+ufos<-select(nuforc, -Summary, -Duration, -Time)
+```  
+
+## filter: subset rows {.build} 
+Which states have had the highest monthly UFO sightings since 2015?    
+```{r}
+unique(ufos$Country) #What countries are the sightings from?
+length(unique(ufos$State)) #How many states have sightings?
+```
+Remove observations from Canada and NA states:    
+```{r}
+ufos_usa<-filter(ufos, Country == "USA", !is.na(ufos$State))
+
+length(unique(ufos_usa$State)) 
+```  
+
+##pipelining with %>%    {.build}
+- Execute multiple operations in given order   
+- Increases readability with many commands 
+  
+Which states have had the highest monthly UFO sightings since 2015?  
+```{r}
+ufos<-read.csv("ufos_2014_2016.csv")%>%
+  select(-Summary, -Duration, -Time)%>%
+  filter(Country == "USA", !is.na(State), Year >= 2015)
+```   
+  
+%>% = Ctrl + Shift + m  
+
+##summarize()  {.build} 
+Takes a vector of values and return a single value for designated groups in group_by()  
+
+```{r}
+ufos_state<-ufos%>%
+  group_by(State, Year, Month)%>%
+  summarize(UFO_n = length(Day))
+head(ufos_state)
+``` 
+
+
+##summarize()  {.build}    
+Which states have had the highest monthly UFO sightings since 2015?  
+summarize functions/types  
+
+##Exercise: calculate & plot monthly UFO sightings (+/- SE) by state  {.build}
+```{r}
+se <- function(x) sd(x)/sqrt(length(x)) #hint
+```  
+
+
+```{r}
+ufos_state <- ufos%>%
+  group_by(State, Year, Month)%>%
+  summarize(UFO_n = length(Day))%>% #count number of observations
+  group_by(State)%>%
+  summarize(UFO_mean = mean(UFO_n), UFO_se = se(UFO_n))%>% 
+  arrange(UFO_mean)# sort rows in descending order
+```    
+arrange(): sort rows by variables  
+
+##Monthly UFO sightings   {.smaller }   
+
+```{r,echo=F, fig.width=8, fig.height=4}
+top_states<-top_n(ufos_state, n=25)
+ggplot(top_states, aes(x = reorder(State, UFO_mean), y = UFO_mean))+
+  geom_point(size = 3)+
+  geom_errorbar(aes(ymin = UFO_mean-UFO_se, ymax=UFO_mean+UFO_se), width= .2)+
+  theme_minimal()+labs(x="State", y="Montly UFO sightings")
+```  
+  
+```{r,eval=F}
+ggplot(top_states, aes(x = reorder(State, UFO_mean), y = UFO_mean))+geom_point(size=3)+
+  geom_errorbar(aes(ymin = UFO_mean-UFO_se, ymax=UFO_mean+UFO_se), width= .2)+
+  theme_minimal()+labs(x="State", y="Montly UFO sightings")
+```  
+
+##join data   
+Merge UFO data with state census data to account for population size in UFO sightings  
+
+```{r,eval=T,message=F, warning=F}
+months<-as.ordered(c("January","February","April","May","June","July","August","September","October","November","December"))
+state_census<-read.csv("states.csv") #census data
+
+ufos<-read.csv("ufos_2014_2016.csv")%>%
+  filter(Country == "USA", !is.na(State), Month %in% months)%>%
+  left_join(state_census, by=c("State"="state"))%>%
+  group_by(Month, region, division, State, population, area)%>%
+  summarize(UFOs = length(Shape))
+head(ufos)  
+```  
+## mutate()  
+Make new variables from existing variables  
+```{r,eval=F}
+ufos.month<-ufos%>%
+  mutate(UFO_pop = UFOs/population*1000000) ##UFOs per million ppl
+```  
+
+##Exercise {.smaller .build}  
+Visualize UFO sightings using ggplot2   
+```{r}
+ufos.month<-ufos%>%
+  mutate(UFO_pop = UFOs/population*1000000)%>% 
+  group_by(Month,division)%>%
+  summarize(UFO_month = mean(UFO_pop)) #sightings per month
+
+```  
+  
+```{r, eval=F}
+ggplot(ufos.month, aes(x=Month, y=UFO_month,group=division, color=division))+
+  geom_point(size=2)+
+  theme(axis.text.x=element_text(angle=90))+
+  theme_minimal()+
+  geom_line(size=1)+
+  scale_x_discrete(name="Month", labels=months)+
+  labs(x="", y="UFO sightings a month (for every 1,000,000 people)")
+
+```  
+  
+##Montly UFO sightings  
+  
+```{r, eval=T, echo=F}
+ggplot(ufos.month, aes(x=Month, y=UFO_month,group=division, color=division))+
+  geom_point(size=2)+
+  theme(axis.text.x=element_text(angle=90))+
+  theme_minimal()+
+  geom_line(size=1)+
+  scale_x_discrete(name="Month", labels=months)+
+  labs(x="", y="UFO sightings a month (for every 1,000,000 people)")
+
+``` 
+
+##UFO shapes{.smaller .build}   
+What shape is most common?
+```{r,warning=F}
+library(reshape2)
+
+ufos<-read.csv("ufos_2014_2016.csv")%>%
+  left_join(state_census, by=c("State"="state"))%>%
+  group_by(Shape, region, State, population)%>%
+  na.omit()%>%
+  summarize(UFOs = length(Day))%>%
+  dcast(region+State+population~Shape, value.var="UFOs")
+colnames(ufos)
+
+```
+##UFO shapes  
+```{r}
+ufos<-ufos%>%
+  select(-State, -population)%>%
+  group_by(region)%>%
+  summarize_all(funs(sum))##proportion?
+ufos[is.na(ufos)]<-0
+  
+
+```
+
+```{r,eval=F}
+ggplot(ufos, aes(x=Shape, y=UFOs_region))+geom_point(size=2)
+str(ufos)
+```
+
+##dplyr cheat sheet  
+  
+    

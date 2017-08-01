@@ -10,15 +10,15 @@ knitr::opts_chunk$set(echo = TRUE, message=FALSE)
 library(knitr)
 library(ggplot2)
 library(dplyr)
-setwd("/Users/colleennell/Dropbox/Projects/R_ed/")
 se <- function(x) sd(x)/sqrt(length(x))
 ```
 
 ##dplyr: grammar of data manipulation    
 
 ```{r,eval=F}
-install.packages("dplyr")
+install.packages(c("dplyr","RCurl"))
 library(dplyr)
+library(RCurl)
 ```  
 ###Main verbs  
 - select() & filter()  
@@ -32,29 +32,62 @@ https://cran.r-project.org/web/packages/dplyr/dplyr.pdf
 ##UFO Reporting Center data  {.smaller}  
     
 ```{r}
-nuforc<-read.csv("ufos_2014_2016.csv")
+nuforc<-read.csv("https://raw.githubusercontent.com/collnell/UFOs/master/ufos_2014_2016.csv")
 str(nuforc)
 ```  
-###Which states have had the highest monthly UFO sightings in 2015 & 2016?  
+http://www.nuforc.org/  
 
-http://www.nuforc.org/
+##UFO sightings over time   {.smaller}
+mutate() to create a new variable from existing variables  
+summarize() to create a value from a vector (based on group_by levels)  
+```{r}
+ufos_date<-nuforc%>%
+  mutate(Date = as.Date(paste(Year, Month, Day, sep="/"), format="%Y/%B/%d"))%>%
+  group_by(Date, Month, Year)%>%
+  na.omit()%>%
+  summarize(UFOs = length(Day))
+str(ufos_date)
+
+```  
+  
+## UFO sightings  {.smaller}      
+```{r}
+
+ggplot(ufos_date, aes(x=Date, y=UFOs))+geom_point(size=1)+theme_minimal()+
+  scale_x_date(date_labels= "%b-%Y")
+
+
+```
+```{r}
+max(ufos_date$UFOs)
+head(ufos_date[ufos_date$UFOs > 50, ], 10)
+
+
+```
+
+###Which US states have had the highest average monthly UFO sightings?  
 
 ## select: subset columns  {.smaller .build}  
 
 ```{r}
-ufos <- select(nuforc, Year, Month, Day, Country, State, City, Shape)
+ufos <- select(nuforc, Year, Month, Day, Country, State, City, Shape, Summary)
 head(ufos)
 ```  
-```{r, echo=F}
-nuforc<-read.csv("ufos_2014_2016.csv")
-```
 or drop unwanted variables:  
 ```{r, eval=F}
-ufos<-select(nuforc, -Summary, -Duration, -Time)
+ufos<-select(nuforc, -Duration, -Time)
 ```  
 
-## filter: subset rows {.build} 
-Which states have had the highest monthly UFO sightings since 2015?    
+## filter: subset rows {.smaller .build} 
+
+```{r}
+ufos$Summary<-as.character(ufos$Summary)
+aliens<-filter(ufos, grepl("alien", Summary))
+head(aliens$Summary,15)
+
+```  
+## filter: subset rows {.smaller .build} 
+Which US states have had the highest monthly UFO sightings?    
 ```{r}
 unique(ufos$Country) #What countries are the sightings from?
 length(unique(ufos$State)) #How many states have sightings?
@@ -66,20 +99,20 @@ ufos_usa<-filter(ufos, Country == "USA", !is.na(ufos$State))
 length(unique(ufos_usa$State)) 
 ```  
 
-##pipelining with %>%    {.build}
+##pipelining with %>%    {.smaller .build}
 - Execute multiple operations in given order   
 - Increases readability with many commands 
+- Ctrl + Shift + m  
   
-Which states have had the highest monthly UFO sightings since 2015?  
+Which US states have had the highest monthly UFO sightings?    
 ```{r}
-ufos<-read.csv("ufos_2014_2016.csv")%>%
+ufos<-read.csv("https://raw.githubusercontent.com/collnell/UFOs/master/ufos_2014_2016.csv")%>%
   select(-Summary, -Duration, -Time)%>%
-  filter(Country == "USA", !is.na(State), Year >= 2015)
+  filter(Country == "USA", !is.na(State))
 ```   
-  
-%>% = Ctrl + Shift + m  
 
-##summarize()  {.build} 
+
+##summarize()  {.smaller .build} 
 Takes a vector of values and return a single value for designated groups in group_by()  
 
 ```{r}
@@ -90,11 +123,8 @@ head(ufos_state)
 ``` 
 
 
-##summarize()  {.build}    
-Which states have had the highest monthly UFO sightings since 2015?  
-summarize functions/types  
-
-##Exercise: calculate & plot monthly UFO sightings (+/- SE) by state  {.build}
+##Exercise:  {.build}
+calculate & plot monthly UFO sightings by state  
 ```{r}
 se <- function(x) sd(x)/sqrt(length(x)) #hint
 ```  
@@ -126,14 +156,15 @@ ggplot(top_states, aes(x = reorder(State, UFO_mean), y = UFO_mean))+geom_point(s
   theme_minimal()+labs(x="State", y="Montly UFO sightings")
 ```  
 
-##join data   
+##join data   {.smaller}  
 Merge UFO data with state census data to account for population size in UFO sightings  
 
 ```{r,eval=T,message=F, warning=F}
-months<-as.ordered(c("January","February","April","May","June","July","August","September","October","November","December"))
-state_census<-read.csv("states.csv") #census data
+months<-as.ordered(c("January","February","April","May","June","July",
+                     "August","September","October","November","December"))  
+state_census<-read.csv("https://raw.githubusercontent.com/collnell/UFOs/master/states.csv") #census data
 
-ufos<-read.csv("ufos_2014_2016.csv")%>%
+ufos<-ufos%>%
   filter(Country == "USA", !is.na(State), Month %in% months)%>%
   left_join(state_census, by=c("State"="state"))%>%
   group_by(Month, region, division, State, population, area)%>%
@@ -146,6 +177,12 @@ Make new variables from existing variables
 ufos.month<-ufos%>%
   mutate(UFO_pop = UFOs/population*1000000) ##UFOs per million ppl
 ```  
+mutate_all(funs())  
+- same structure but takes a list of functions and applies them to all numeric variables  
+
+summarize_all(funs(mean, se, length))  
+- calculates mean, se, and n for all numeric variables
+
 
 ##Exercise {.smaller .build}  
 Visualize UFO sightings using ggplot2   
@@ -181,36 +218,34 @@ ggplot(ufos.month, aes(x=Month, y=UFO_month,group=division, color=division))+
 
 ``` 
 
-##UFO shapes{.smaller .build}   
-What shape is most common?
+##casting data to wide form {.smaller .build}   
+dcast() takes variables and creates new columns based on levels  
+Cast dataframe by UFO shape  
 ```{r,warning=F}
 library(reshape2)
 
 ufos<-read.csv("ufos_2014_2016.csv")%>%
   left_join(state_census, by=c("State"="state"))%>%
-  group_by(Shape, region, State, population)%>%
+  group_by(Shape, region)%>%
   na.omit()%>%
   summarize(UFOs = length(Day))%>%
-  dcast(region+State+population~Shape, value.var="UFOs")
+  dcast(region~Shape, value.var="UFOs")
 colnames(ufos)
 
-```
-##UFO shapes  
+```  
+##melting data to long form  
+
+In 'reshape2' package  
+melt()  
 ```{r}
-ufos<-ufos%>%
-  select(-State, -population)%>%
-  group_by(region)%>%
-  summarize_all(funs(sum))##proportion?
-ufos[is.na(ufos)]<-0
-  
+#reverse
+ufo_long<-melt(ufos, id.vars="region", variable.name="Shape")
+str(ufo_long)
 
 ```
 
-```{r,eval=F}
-ggplot(ufos, aes(x=Shape, y=UFOs_region))+geom_point(size=2)
-str(ufos)
-```
 
 ##dplyr cheat sheet  
   
+https://www.rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf   
     
